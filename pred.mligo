@@ -11,17 +11,14 @@ let percent = 1000n
 
 type probabilities = (outcome, probability) map
 type qps = (outcome, qp) map
-type bid = {
-    quantity : nat;
-    probabilities : probabilities;
-}
+let clearing_prices = (outcome, price) map
 
 let empty_ids_map : (outcome, token_id) map = Map.empty
 let empty_bids_map : (address, probabilities) map = Map.empty
 let empty_Q_map : (address, quantity) map = Map.empty
 let empty_Qp_map : (address, qps) map = Map.empty
 let empty_qps_map : qps = Map.empty
-let empty_clearing_prices_map : (outcome, price) map = Map.empty
+let empty_clearing_prices_map : clearing_prices = Map.empty
 
 type market_storage = {
     num_outcomes : nat;
@@ -29,7 +26,7 @@ type market_storage = {
     lqt_token : nat option;
     token_ids : (outcome, token_id) map;
     qps_total : qps;
-    clearing_prices : (outcome, price) map;
+    clearing_prices : clearing_prices;
     auction_bids : (address, probabilities) map; (* might be a big map later *)
     auction_Q : (address, quantity) map;
     auction_Qp : (address, qps) map;
@@ -88,6 +85,7 @@ let get_Q (addr : address) (ms : market_storage) : quantity =
     | None -> (failwith "error_Q_DOESNT_EXIST" : quantity)
     | Some q -> q
 
+(* this function is absed on "Map Operations over Maps" *)
 let calculate_Qp (addr : address) (ms : market_storage) : qps =
     let q : quantity = get_Q addr ms in
     let qps_m = get_Qps addr ms in 
@@ -103,6 +101,7 @@ let update_q_total (addr : address) (ms : market_storage) : market_storage =
     let user_Q = get_Q addr ms in
     {ms with q_total = ms.q_total + user_Q}
 
+(* this function is based on "Map Operations over Maps" *)
 let update_qps_total (addr : address) (ms : market_storage) : qps = 
     let qps_tot = ms.qps_total in
     let qps_user = get_Qps addr ms in
@@ -113,7 +112,18 @@ let update_qps_total (addr : address) (ms : market_storage) : qps =
         x + qp_val in
     (Map.map new_qp_tot qps_user : qps)
 
-(* CALCULATE THE CLEARING PRICE *)
+(* this function is based on "Map Operations over Maps" *)
+let calculate_clearing_price (ms : market_storage) clearing_prices =
+    let q_tot = ms.q_total in
+    let qps_tot = ms.qps_total in
+    let clearing_prs = ms.clearing_prices in
+    let new_clear_price : (nat * nat) -> nat = fun (i, qp_val_tot : outcome * qp) ->
+        let prev_clearing_prs = match Map.find_opt i clearing_prs with
+        | Some x -> x
+        | None -> (failwith "foo" : nat) in
+        x + (qp_val_tot / q_tot) in 
+    (Map.map new_clear_price qps_tot : qps)
+
 
 (* CALCULATE USER ALLOCATION *)
 
