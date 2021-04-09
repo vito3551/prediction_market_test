@@ -66,7 +66,6 @@ let get_specific_prob (addr : address) (ms : market_storage) (outcome : outcome)
 (* this function is based on "Iterated Operations over Maps" *)
 let check_prob_geq0_and_leq1 (addr : address) (ms : market_storage) : unit =
     let prob = get_probabilities addr ms in
-    (* let check_p (prob : probabilities) : unit = *)
     let predicate = fun (i, j : outcome * probability) -> assert (j >= 0n && j <= 100n)
     in Map.iter predicate prob
 
@@ -99,7 +98,7 @@ let calculate_Qp (addr : address) (ms : market_storage) : qps =
         let prev_qps_m = match Map.find_opt i qps_m with
         | Some x -> x
         | None -> (failwith "foo" : nat) in
-        x + (proba * q) in
+        prev_qps_m + (proba * q) in
     (Map.map multiqp prob : qps)
 
 let update_q_total (addr : address) (ms : market_storage) : market_storage =
@@ -114,7 +113,7 @@ let update_qps_total (addr : address) (ms : market_storage) : qps =
         let prev_qps_tot  = match Map.find_opt i qps_tot with
         | Some x -> x
         | None -> (failwith "foo" : nat) in
-        x + qp_val in
+        prev_qps_tot + qp_val in
     (Map.map new_qp_tot qps_user : qps)
 
 (* this function is based on "Map Operations over Maps" *)
@@ -126,13 +125,13 @@ let calculate_clearing_price (ms : market_storage) : clearing_prices =
         let prev_clearing_prs = match Map.find_opt i clearing_prs with
         | Some x -> x
         | None -> (failwith "foo" : nat) in
-        x + (qp_val_tot / q_tot) in 
+        prev_clearing_prs + (qp_val_tot / q_tot) in 
     (Map.map new_clear_price qps_tot : qps)
 
 
 (* CALCULATE USER ALLOCATION *)
 let get_allocations (addr : address) (ms : market_storage) : user_allocations =
-    match Map.find_opt address ms.market_allocations with
+    match Map.find_opt addr ms.market_allocations with
     | None -> (failwith "error_USR_ALLOCATION_DOESNT_EXIST" : user_allocations)
     | Some a -> a
 
@@ -147,8 +146,14 @@ let calculate_allocation (addr : address) (ms : market_storage) : user_allocatio
         let prev_usr_alloc = match Map.find_opt i alloc_usr with
         | Some a -> a
         | None -> (failwith "foo" : nat) in
-        a + (qp_val / p) in
-    (Map.map new_alloc qps_user : qps) 
+        prev_usr_alloc + (qp_val / spec_price) in
+    (Map.map new_alloc qps_usr : qps)
+
+
+    
+
+let test_xxx (ms : unit) : nat =
+    1n
 
 let main (num_outcomes : nat) : unit =
     unit
