@@ -29,7 +29,7 @@ type market_storage = {
     lqt_token : nat option;
     token_ids : (outcome, token_id) map;
     qps_total : qps;
-    clearing_prices : clearing_prices;
+    clearing_prices : (outcome, price) map;
     auction_bids : (address, probabilities) map; (* might be a big map later *)
     auction_Q : (address, quantity) map;
     auction_Qp : (address, qps) map;
@@ -118,16 +118,15 @@ let update_qps_total (addr : address) (ms : market_storage) : qps =
 
 (* this function is based on "Map Operations over Maps" *)
 let calculate_clearing_price (ms : market_storage) : clearing_prices =
-    let q_tot = ms.q_total in
-    let qps_tot = ms.qps_total in
-    let clearing_prs = ms.clearing_prices in
+    let q_tot : nat = ms.q_total in
+    let qps_tot : (nat, nat) map = ms.qps_total in
+    let clearing_prs : (nat, nat) map = ms.clearing_prices in
     let new_clear_price : (nat * nat) -> nat = fun (i, qp_val_tot : outcome * qp) ->
         let prev_clearing_prs = match Map.find_opt i clearing_prs with
         | Some x -> x
         | None -> (failwith "foo" : nat) in
         prev_clearing_prs + (qp_val_tot / q_tot) in 
-    (Map.map new_clear_price qps_tot : qps)
-
+    (Map.map new_clear_price qps_tot : (nat, nat) map)
 
 (* CALCULATE USER ALLOCATION *)
 let get_allocations (addr : address) (ms : market_storage) : user_allocations =
@@ -135,22 +134,36 @@ let get_allocations (addr : address) (ms : market_storage) : user_allocations =
     | None -> (failwith "error_USR_ALLOCATION_DOESNT_EXIST" : user_allocations)
     | Some a -> a
 
-let calculate_allocation (addr : address) (ms : market_storage) : user_allocations =
+type qp_mapper = ( nat * nat ) -> nat
+
+let calculate_allocation (addr : address) (ms : market_storage) : (nat, nat) map =
     let qps_usr = get_Qps addr ms in
-    let clr_prices = calculate_clearing_price in
+    let clr_prices : (nat, nat) map = ms.clearing_prices (* need to call calculate_clearing_price before this one*) in
     let alloc_usr = get_allocations addr ms in
-    let new_alloc : (nat * nat) -> nat = fun (i, qp_val : outcome * qp) ->
-        let spec_price = match Map.find_opt i clr_prices with
+    let new_alloc : qp_mapper = fun (i, qp_val : outcome * qp) -> (
+        let spec_price = match (Map.find_opt i clr_prices) with
         | Some p -> p
         | None -> (failwith "foo" : nat) in
-        let prev_usr_alloc = match Map.find_opt i alloc_usr with
+        let prev_usr_alloc = match (Map.find_opt i alloc_usr) with
         | Some a -> a
         | None -> (failwith "foo" : nat) in
-        prev_usr_alloc + (qp_val / spec_price) in
+        prev_usr_alloc + (qp_val / spec_price) ) in
     (Map.map new_alloc qps_usr : qps)
 
+let sum_alloc_times_price (qps_m : qps) (cpr_map : clearing_prices) : nat =
+    let agg = fun (i, qp_map : nat * (outcome * qp)) ->
+        let spec_price = match (Map.find_opt qp_map.0 cpr_map) with
+        | Some p -> p
+        | None -> (failwith "foo" : nat) in
+        i + (qp_map.1 * spec_price) in
+    (Map.fold agg qps_m 0n)
 
-    
+let check_alloc_times_price (addr : address) (ms : market_storage) : bool =
+    let qps_usr = get_Qps addr ms in
+    let clr_prices = ms.clearing_prices in
+    let usr_Q = get_Q addr ms in
+    let alloc_x_price = sum_alloc_times_price qps_usr clr_prices in
+    (alloc_x_price = usr_Q)
 
 let test_xxx (ms : unit) : nat =
     1n
