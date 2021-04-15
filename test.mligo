@@ -7,7 +7,7 @@ type auction_map = (string, bids) map
 let empty_qps_map : (nat, nat) map = Map.empty
 let empty_auction_map : (string, bids) map = Map.empty
 let empty_Q_map : (string, nat) map = Map.empty
-
+let u1 : string = "u1"
 type market_storage = {
     num_outcomes : nat;
     q_total : nat;
@@ -27,19 +27,24 @@ let p_map : (string, int) map = Map.literal [
     ("b", 2)
 ]
 
-let check_p (prob : (int, int) map) : unit = 
-    let predicate = fun (i, j : outcome * probability) -> assert (j >= 0 && j <= 100)
-    in Map.iter predicate prob
-
-(* this function is based on "Folded Operations over Maps" *)
-let sum_prob (prob : (int, int) map) : int = 
-    let folded = fun (i, proba : int * (outcome * probability)) -> (i + proba.1)in 
-    (Map.fold folded prob 0) 
-
 let get_probabilities (addr : string) (ms : market_storage) : bids = 
     match Map.find_opt addr ms.auction_bids with
     | None -> (failwith "error_PROBS_DOESNT_EXIST" : bids) 
     | Some p -> p
+
+let check_p (prob : (nat, nat) map) : unit = 
+    let predicate = fun (i, j : nat * nat) -> assert (j >= 0n && j <= 100n)
+    in Map.iter predicate prob
+
+(* this function is based on "Folded Operations over Maps" *)
+let sum_prob (prob : (nat, nat) map) : nat = 
+    let folded = fun (i, proba : nat * (nat * nat)) -> (i + proba.1)in 
+    (Map.fold folded prob 0n)
+
+let check_prob_sum_to_one (addr : string) (ms : market_storage) : bool =
+    let prob = get_probabilities addr ms in
+    let sum_probs : nat = sum_prob prob in
+    (sum_probs = 100n)  
 
 let get_Qps (addr : string) (ms : market_storage) : bids = 
     match Map.find_opt addr ms.auction_Qp with
@@ -59,7 +64,7 @@ let calculate_Qp (addr : string) (ms : market_storage) : bids =
         let prev_qps_m = match Map.find_opt i qps_m with
         | Some x -> x
         | None -> 0n in
-        prev_qps_m + (proba * q) in
+        prev_qps_m + (proba * q * 1000000n) in
     (Map.map multiqp prob : bids)
 
 let update_q_total (addr : string) (ms : market_storage) : market_storage =
@@ -106,8 +111,24 @@ let calculate_allocation (addr : string) (ms : market_storage) : (nat, nat) map 
         let prev_usr_alloc = match (Map.find_opt i alloc_usr) with
         | Some a -> a
         | None -> 0n in
-        prev_usr_alloc + (qp_val / spec_price) ) in
+        prev_usr_alloc + ((qp_val * 1000000n) / spec_price) ) in
     (Map.map new_alloc qps_usr : bids)
+
+let sum_alloc_times_price (alloc_m : bids) (cpr_map : bids) : nat =
+    let agg = fun (i, q_map : nat * (nat * nat)) ->
+        let spec_price = match (Map.find_opt q_map.0 cpr_map) with
+        | Some p -> p
+        | None -> (failwith "foo" : nat) in
+        i + (q_map.1 * spec_price) in
+    (Map.fold agg alloc_m 0n)
+
+let check_alloc_times_price (addr : string) (ms : market_storage) : nat =
+    let alloc_usr = get_allocations addr ms in
+    let clr_prices = ms.clearing_prices in
+    let usr_Q = get_Q addr ms in
+    let alloc_x_price = sum_alloc_times_price alloc_usr clr_prices in
+    alloc_x_price / 100000000000000n 
+
 
 let pb0 : bids = Map.literal [(0n,10n); (1n,75n); (2n, 15n)]
 let pb1 : bids = Map.literal [(0n, 15n); (1n, 70n); (2n, 15n)]
@@ -115,6 +136,7 @@ let me : string = "tz1KqTpEZ7Yob7QbPE4Hy4Wo8fHG8LhKxZSx"
 
 type people = (string * string)
 let users : people = ("u1", "u2")
+let u1 : string = "u1"
 
 let my_ms : market_storage = {
     num_outcomes = 3n;
@@ -131,7 +153,17 @@ let my_ms : market_storage = {
 
 let main (addr, ms : people * market_storage) : market_storage =
     (* user 0 *)
+    (* Add usr0 Q-val to Q-tot in the market_storage*)
     let new_ms = update_q_total addr.0 ms in
+    (* Check if usr0 probs sum to 100*)
+    let prob_usr0 = match Map.find_opt addr.0 new_ms.auction_bids with
+    | None -> (failwith "error_PROBS_DOESNT_EXIST" : bids) 
+    | Some p -> p in
+    let sum_prob_usr0 = sum_prob prob_usr0 in
+    if sum_prob_usr0 <> 100n then
+        (failwith "error_PROBS_DOESNT_SUMto100" : market_storage)
+    else
+    (* Calculate Qp for usr0 and ad it to the market storage*) 
     let usr0_qp : (nat, nat) map = calculate_Qp addr.0 new_ms in 
     let a0_Qp : (string, bids) map = Map.update (addr.0 : string) (Some usr0_qp) new_ms.auction_Qp in
     let n_ms = {new_ms with auction_Qp = a0_Qp} in
@@ -139,7 +171,17 @@ let main (addr, ms : people * market_storage) : market_storage =
     let n1_ms = {n_ms with qps_total = qps_tot0} in
 
     (* user 1 *)
+    (* Add usr1 Q-val to Q-tot in the market_storage*)
     let n2_ms = update_q_total addr.1 n1_ms in
+    (* Check if usr0 probs sum to 100*)
+    let prob_usr1 = match Map.find_opt addr.1 n2_ms.auction_bids with
+    | None -> (failwith "error_PROBS_DOESNT_EXIST" : bids) 
+    | Some p -> p in
+    let sum_prob_usr1 = sum_prob prob_usr1 in
+    if sum_prob_usr1 <> 100n then
+        (failwith "error_PROBS_DOESNT_SUMto100" : market_storage)
+    else 
+    (* Calculate Qp for usr1 and ad it to the market storage*) 
     let usr1_qp : bids = calculate_Qp addr.1 n2_ms in
     let a1_Qp = Map.update (addr.1 : string) (Some usr1_qp) n2_ms.auction_Qp in
     let n3_ms = {n2_ms with auction_Qp = a1_Qp} in
@@ -154,12 +196,17 @@ let main (addr, ms : people * market_storage) : market_storage =
     let u0_alloc = calculate_allocation addr.0 n5_ms in
     let a0 = Map.update (addr.0 : string) (Some u0_alloc) n5_ms.market_allocations in
     let n6_ms = {n5_ms with market_allocations = a0} in
-
+    (* CHECK ALLOC TIMES PRICE
+    let usr0_a_times_p = check_alloc_times_price addr.0 n6_ms in
+    usr0_a_times_p *)
+    (* if usr0_a_times_p <> true then
+        (failwith "error_ALLOC_TIMES_PRICE_ISNT_Q" : market_storage)
+    else *)
     (* Calculate allocation for user 1 *)
     let u1_alloc = calculate_allocation addr.1 n6_ms in
     let a1 = Map.update (addr.1 : string) (Some u1_alloc) n6_ms.market_allocations in
     let n7_ms = {n6_ms with market_allocations = a1} in
-    n7_ms
+    n7_ms 
 
 (* let main (addr, ms : string * market_storage) : market_storage =
     let new_ms = update_q_total addr ms in
