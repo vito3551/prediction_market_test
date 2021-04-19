@@ -64,7 +64,7 @@ let calculate_Qp (addr : string) (ms : market_storage) : bids =
         let prev_qps_m = match Map.find_opt i qps_m with
         | Some x -> x
         | None -> 0n in
-        prev_qps_m + (proba * q * 1000000n) in
+        prev_qps_m + (Bitwise.shift_left (proba * q) 48n) in
     (Map.map multiqp prob : bids)
 
 let update_q_total (addr : string) (ms : market_storage) : market_storage =
@@ -111,7 +111,7 @@ let calculate_allocation (addr : string) (ms : market_storage) : (nat, nat) map 
         let prev_usr_alloc = match (Map.find_opt i alloc_usr) with
         | Some a -> a
         | None -> 0n in
-        prev_usr_alloc + ((qp_val * 1000000n) / spec_price) ) in
+        prev_usr_alloc + ((qp_val) / spec_price) ) in
     (Map.map new_alloc qps_usr : bids)
 
 let sum_alloc_times_price (alloc_m : bids) (cpr_map : bids) : nat =
@@ -127,7 +127,7 @@ let check_alloc_times_price (addr : string) (ms : market_storage) : nat =
     let clr_prices = ms.clearing_prices in
     let usr_Q = get_Q addr ms in
     let alloc_x_price = sum_alloc_times_price alloc_usr clr_prices in
-    alloc_x_price / 100000000000000n 
+    alloc_x_price  
 
 
 let pb0 : bids = Map.literal [(0n,10n); (1n,75n); (2n, 15n)]
