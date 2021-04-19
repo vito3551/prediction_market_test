@@ -21,11 +21,6 @@ type market_storage = {
     market_allocations : (string, bids) map;
 }
 
-let a : string = "hello"
-let p_map : (string, int) map = Map.literal [
-    ("a", 1);
-    ("b", 2)
-]
 
 let get_probabilities (addr : string) (ms : market_storage) : bids = 
     match Map.find_opt addr ms.auction_bids with
@@ -122,13 +117,13 @@ let sum_alloc_times_price (alloc_m : bids) (cpr_map : bids) : nat =
         i + (q_map.1 * spec_price) in
     (Map.fold agg alloc_m 0n)
 
-let check_alloc_times_price (addr : string) (ms : market_storage) : nat =
+let check_alloc_times_price (addr : string) (ms : market_storage) : bool =
     let alloc_usr = get_allocations addr ms in
     let clr_prices = ms.clearing_prices in
     let usr_Q = get_Q addr ms in
     let alloc_x_price = sum_alloc_times_price alloc_usr clr_prices in
-    alloc_x_price  
-
+    let a_x_p = (Bitwise.shift_right alloc_x_price 48n) / 100n in
+    abs (a_x_p - usr_Q) <= 1n
 
 let pb0 : bids = Map.literal [(0n,10n); (1n,75n); (2n, 15n)]
 let pb1 : bids = Map.literal [(0n, 15n); (1n, 70n); (2n, 15n)]
@@ -167,6 +162,7 @@ let main (addr, ms : people * market_storage) : market_storage =
     let usr0_qp : (nat, nat) map = calculate_Qp addr.0 new_ms in 
     let a0_Qp : (string, bids) map = Map.update (addr.0 : string) (Some usr0_qp) new_ms.auction_Qp in
     let n_ms = {new_ms with auction_Qp = a0_Qp} in
+    (* Ad usr0 Qp to Qp_total *)
     let qps_tot0 = update_qps_total addr.0 n_ms in
     let n1_ms = {n_ms with qps_total = qps_tot0} in
 
@@ -185,6 +181,7 @@ let main (addr, ms : people * market_storage) : market_storage =
     let usr1_qp : bids = calculate_Qp addr.1 n2_ms in
     let a1_Qp = Map.update (addr.1 : string) (Some usr1_qp) n2_ms.auction_Qp in
     let n3_ms = {n2_ms with auction_Qp = a1_Qp} in
+    (* Ad usr1 Qp to Qp_total *)
     let qps_tot1 = update_qps_total addr.1 n3_ms in 
     let n4_ms = {n3_ms with qps_total = qps_tot1} in
 
@@ -196,17 +193,21 @@ let main (addr, ms : people * market_storage) : market_storage =
     let u0_alloc = calculate_allocation addr.0 n5_ms in
     let a0 = Map.update (addr.0 : string) (Some u0_alloc) n5_ms.market_allocations in
     let n6_ms = {n5_ms with market_allocations = a0} in
-    (* CHECK ALLOC TIMES PRICE
+    (* CHECK that ALLOC TIMES PRICE for usr0 is equal to Q*)
     let usr0_a_times_p = check_alloc_times_price addr.0 n6_ms in
-    usr0_a_times_p *)
-    (* if usr0_a_times_p <> true then
+    if usr0_a_times_p <> true  then
         (failwith "error_ALLOC_TIMES_PRICE_ISNT_Q" : market_storage)
-    else *)
+    else
     (* Calculate allocation for user 1 *)
     let u1_alloc = calculate_allocation addr.1 n6_ms in
     let a1 = Map.update (addr.1 : string) (Some u1_alloc) n6_ms.market_allocations in
     let n7_ms = {n6_ms with market_allocations = a1} in
-    n7_ms 
+    (* CHECK that ALLOC TIMES PRICE for usr1 is equal to Q*)
+    let usr1_a_times_p = check_alloc_times_price addr.1 n7_ms in
+    if usr1_a_times_p <> true then
+        (failwith "error_ALLOC_TIMES_PRICE_ISNT_Q" : market_storage)
+    else
+    n7_ms
 
 (* let main (addr, ms : string * market_storage) : market_storage =
     let new_ms = update_q_total addr ms in
