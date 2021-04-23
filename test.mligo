@@ -43,7 +43,7 @@ let check_prob_sum_to_one (addr : string) (ms : market_storage) : bool =
 
 let get_Qps (addr : string) (ms : market_storage) : bids = 
     match Map.find_opt addr ms.auction_Qp with
-    | None -> empty_qps_map (* (failwith "error_QPS_DOESNT_EXIST" : bids) *)
+    | None -> (failwith "error_QPS_DOESNT_EXIST" : bids) (* empty_qps_map *)
     | Some qp -> qp
 
 let get_Q (addr : string) (ms : market_storage) : nat = 
@@ -53,13 +53,9 @@ let get_Q (addr : string) (ms : market_storage) : nat =
 
 let calculate_Qp (addr : string) (ms : market_storage) : bids =
     let q : nat = get_Q addr ms in
-    let qps_m = get_Qps addr ms in
     let prob = get_probabilities addr ms in
     let multiqp : (nat * nat) -> nat = fun (i, proba : nat * nat) -> 
-        let prev_qps_m = match Map.find_opt i qps_m with
-        | Some x -> x
-        | None -> 0n in
-        prev_qps_m + (Bitwise.shift_left (proba * q) 48n) in
+        (Bitwise.shift_left (proba * q) 48n) in
     (Map.map multiqp prob : bids)
 
 let update_q_total (addr : string) (ms : market_storage) : market_storage =
@@ -81,12 +77,8 @@ let update_qps_total (addr : string) (ms : market_storage) : bids =
 let calculate_clearing_price (ms : market_storage) : bids =
     let q_tot : nat = ms.q_total in
     let qps_tot : (nat, nat) map = ms.qps_total in
-    let clearing_prs : (nat, nat) map = ms.clearing_prices in
     let new_clear_price : (nat * nat) -> nat = fun (i, qp_val_tot : nat * nat) ->
-        let prev_clearing_prs = match Map.find_opt i clearing_prs with
-        | Some x -> x
-        | None -> 0n in
-        prev_clearing_prs + (qp_val_tot / q_tot) in 
+        (qp_val_tot / q_tot) in 
     (Map.map new_clear_price qps_tot : (nat, nat) map)
 
 (* CALCULATE USER ALLOCATION *)
@@ -98,15 +90,11 @@ let get_allocations (addr : string) (ms : market_storage) : bids =
 let calculate_allocation (addr : string) (ms : market_storage) : (nat, nat) map =
     let qps_usr = get_Qps addr ms in
     let clr_prices : (nat, nat) map = ms.clearing_prices (* need to call calculate_clearing_price before this one*) in
-    let alloc_usr = get_allocations addr ms in
     let new_alloc : (nat * nat) -> nat = fun (i, qp_val : nat * nat) -> (
         let spec_price = match (Map.find_opt i clr_prices) with
         | Some p -> p
         | None -> 0n in
-        let prev_usr_alloc = match (Map.find_opt i alloc_usr) with
-        | Some a -> a
-        | None -> 0n in
-        prev_usr_alloc + ((qp_val) / spec_price) ) in
+        ((qp_val ) / spec_price) ) in
     (Map.map new_alloc qps_usr : bids)
 
 let sum_alloc_times_price (alloc_m : bids) (cpr_map : bids) : nat =
@@ -125,12 +113,17 @@ let check_alloc_times_price (addr : string) (ms : market_storage) : bool =
     let a_x_p = (Bitwise.shift_right alloc_x_price 48n) / 100n in
     abs (a_x_p - usr_Q) <= 1n
 
+
+
+            
+
 let pb0 : bids = Map.literal [(0n,10n); (1n,75n); (2n, 15n)]
 let pb1 : bids = Map.literal [(0n, 15n); (1n, 70n); (2n, 15n)]
+let pb2 : bids = Map.literal [(0n, 5n); (1n, 65n); (2n, 30n)]
 let me : string = "tz1KqTpEZ7Yob7QbPE4Hy4Wo8fHG8LhKxZSx"
 
-type people = (string * string)
-let users : people = ("u1", "u2")
+type people = (string * string * string)
+let users : people = ("u1", "u2", "u3")
 let u1 : string = "u1"
 
 let my_ms : market_storage = {
@@ -140,8 +133,8 @@ let my_ms : market_storage = {
     token_ids = empty_qps_map;
     qps_total = empty_qps_map;
     clearing_prices = empty_qps_map;
-    auction_bids = Map.literal [(users.0, pb0); (users.1, pb1)];
-    auction_Q = Map.literal [(users.0, 100n); (users.1, 200n)]; (* empty_Q_map *) 
+    auction_bids = Map.literal [(users.0, pb0); (users.1, pb1); (users.2, pb2)];
+    auction_Q = Map.literal [(users.0, 100n); (users.1, 200n); (users.2, 250n)];  (* empty_Q_map *) 
     auction_Qp = empty_auction_map;
     market_allocations = empty_auction_map;
 }
@@ -184,6 +177,9 @@ let main (addr, ms : people * market_storage) : market_storage =
     (* Ad usr1 Qp to Qp_total *)
     let qps_tot1 = update_qps_total addr.1 n3_ms in 
     let n4_ms = {n3_ms with qps_total = qps_tot1} in
+
+    (* user 2 *)
+    (* Add usr2 Q-val to Q-tot in the market_storage*)
 
     (* Calculate clearing price *)
     let cp = calculate_clearing_price n4_ms in
