@@ -11,6 +11,7 @@ let u1 : string = "u1"
 type market_storage = {
     num_outcomes : nat;
     q_total : nat;
+    min_qps_total : nat;
     lqt_token : nat option;
     token_ids : (nat, nat) map;
     qps_total : bids;
@@ -19,6 +20,8 @@ type market_storage = {
     auction_Q : (string, nat) map;
     auction_Qp : (string, bids) map;
     market_allocations : (string, bids) map;
+    uniswap_pool : bids;
+    market_invariant : nat;
 }
 
 
@@ -113,6 +116,52 @@ let check_alloc_times_price (addr : string) (ms : market_storage) : bool =
     let a_x_p = (Bitwise.shift_right alloc_x_price 48n) / 100n in
     abs (a_x_p - usr_Q) <= 1n
 
+(* UNISWAP *)
+let min (x : nat) (y : nat) = if x < y then x else y
+
+let get_min_val (m : (nat, nat) map) : nat =
+    let folded = fun (i, j : nat * (nat * nat)) ->
+        let mv = min i j.1 in
+        (i * 0n) + mv in
+    (Map.fold folded m (Bitwise.shift_left 10000000n 48n))
+
+let total_min_qps (addr : string) (ms : market_storage) : market_storage = 
+    let usr_Qp = get_Qps addr ms in
+    let usr_min_Qp = get_min_val usr_Qp in
+    {ms with min_qps_total = ms.min_qps_total + usr_min_Qp}
+
+let calculate_uniswap_market (ms : market_storage) : bids =
+    let min_Qp_tot = ms.min_qps_total in
+    let clr_price = ms.clearing_prices in
+    let uniswap_market = fun (i, price : nat * nat) ->
+        (min_Qp_tot / price) in
+    (Map.map uniswap_market clr_price)
+
+let add_uniswap_mrk_to_storage (ms : market_storage) : market_storage =
+    let uniswap_mrk = calculate_uniswap_market ms in
+    {ms with uniswap_pool = uniswap_mrk}
+
+let calculate_market_invariant (ms : market_storage) : nat =
+    let uniswap_mrk = ms.uniswap_pool in
+    let prod = fun (i, key_val : nat * (nat * nat)) ->
+        i * key_val.1 in
+    (Map.fold prod uniswap_mrk 1n)
+
+let swap_token (ms : market_storage) (token_sell : nat) (token_sell_val : nat) (token_buy : nat) : market_storage = 
+    (* let invariant = ms.market_invariant in *)
+    let old_pool = ms.uniswap_pool in
+    let token_buy_pool = match (Map.find_opt token_buy old_pool) with 
+        | None -> (failwith "error_Val_DOSNT_EXIST_in_UNISWAP_POOL" : nat)
+        | Some v -> v in 
+    let token_sell_pool = match (Map.find_opt token_sell ms.uniswap_pool) with
+        | None -> (failwith "error_Val_DOSNT_EXIST_in_UNISWAP_POOL" : nat)
+        | Some v -> v in
+    let token_sell_new = token_sell_pool + token_sell_val in
+    let token_buy_new = (token_sell_pool * token_buy_pool) / token_sell_new in
+    let new_pool = Map.update token_sell (Some token_sell_new) old_pool in
+    let new_pool = Map.update token_buy (Some token_buy_new) new_pool in
+    {ms with uniswap_pool = new_pool} 
+
 
 
             
@@ -121,6 +170,7 @@ let pb0 : bids = Map.literal [(0n,10n); (1n,75n); (2n, 15n)]
 let pb1 : bids = Map.literal [(0n, 15n); (1n, 70n); (2n, 15n)]
 let pb2 : bids = Map.literal [(0n, 5n); (1n, 65n); (2n, 30n)]
 let me : string = "tz1KqTpEZ7Yob7QbPE4Hy4Wo8fHG8LhKxZSx"
+let orka : bids = Map.remove 0n pb2
 
 type people = (string * string * string)
 let users : people = ("u1", "u2", "u3")
@@ -129,6 +179,7 @@ let u1 : string = "u1"
 let my_ms : market_storage = {
     num_outcomes = 3n;
     q_total = 0n;
+    min_qps_total = 0n;
     lqt_token = (None : nat option);
     token_ids = empty_qps_map;
     qps_total = empty_qps_map;
@@ -137,6 +188,8 @@ let my_ms : market_storage = {
     auction_Q = Map.literal [(users.0, 100n); (users.1, 200n); (users.2, 250n)];  (* empty_Q_map *) 
     auction_Qp = empty_auction_map;
     market_allocations = empty_auction_map;
+    uniswap_pool = empty_qps_map; 
+    market_invariant = 0n;
 }
 
 let main (addr, ms : people * market_storage) : market_storage =
@@ -158,6 +211,8 @@ let main (addr, ms : people * market_storage) : market_storage =
     (* Ad usr0 Qp to Qp_total *)
     let qps_tot0 = update_qps_total addr.0 n_ms in
     let n1_ms = {n_ms with qps_total = qps_tot0} in
+    (* Get min Qp val for usr0 and ad it to total_min_qps in the market storage *)
+    let n1_ms = total_min_qps addr.0 n1_ms in
 
     (* user 1 *)
     (* Add usr1 Q-val to Q-tot in the market_storage*)
@@ -177,6 +232,8 @@ let main (addr, ms : people * market_storage) : market_storage =
     (* Ad usr1 Qp to Qp_total *)
     let qps_tot1 = update_qps_total addr.1 n3_ms in 
     let n4_ms = {n3_ms with qps_total = qps_tot1} in
+    (* Get min Qp val for usr0 and ad it to total_min_qps in the market storage *)
+    let n4_ms = total_min_qps addr.1 n4_ms in
 
     (* user 2 *)
     (* Add usr2 Q-val to Q-tot in the market_storage*)
@@ -203,6 +260,14 @@ let main (addr, ms : people * market_storage) : market_storage =
     if usr1_a_times_p <> true then
         (failwith "error_ALLOC_TIMES_PRICE_ISNT_Q" : market_storage)
     else
+    (* n7_ms *)
+
+    (* Calculate uniswap pool *)
+    let n7_ms = add_uniswap_mrk_to_storage n7_ms in
+    
+    (* Calculate the invariant *)
+    let invariant = calculate_market_invariant n7_ms in
+    let n7_ms = {n7_ms with market_invariant = invariant} in
     n7_ms
 
 (* let main (addr, ms : string * market_storage) : market_storage =
