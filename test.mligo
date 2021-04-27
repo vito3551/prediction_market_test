@@ -1,6 +1,3 @@
-type outcome = int
-type probability = int
-type probabilities = (outcome, probability) map
 type bids = (nat, nat) map
 type auction_map = (string, bids) map 
 
@@ -10,50 +7,55 @@ let empty_Q_map : (string, nat) map = Map.empty
 let u1 : string = "u1"
 type market_storage = {
     num_outcomes : nat;
-    q_total : nat;
-    min_qps_total : nat;
-    lqt_token : nat option;
-    token_ids : (nat, nat) map;
-    qps_total : bids;
-    clearing_prices : bids;
-    auction_bids : (string, bids) map; (* might be a big map later *)
-    auction_Q : (string, nat) map;
-    auction_Qp : (string, bids) map;
-    market_allocations : (string, bids) map;
-    uniswap_pool : bids;
-    market_invariant : nat;
+    q_total : nat; (* total quantity bought by everyone *)
+    min_qps_total : nat; (* change the name to sum_of_min_qps_val *) (* This is the sum of each users min val of (quantity times probability) *)
+    lqt_token : nat option; (* Liquidity token *)
+    token_ids : (nat, nat) map; (* ids of each outcome token *)
+    qps_total : bids; (* map with all quantity * probability *)
+    clearing_prices : bids; (* the price of each outcome after the clearing stage *)
+    auction_bids : (string, bids) map; (* might be a big map later *) (* map of mpa that contains each users probability for each outcome *)
+    auction_Q : (string, nat) map; (* map that contains each users bought in quantity *)
+    auction_Qp : (string, bids) map; (* map that contains each users quantity * probability *)
+    market_allocations : (string, bids) map; (* each users allocation after the auction stage *)
+    uniswap_pool : bids; (* available quantity of each outcome *)
+    market_invariant : nat; (* the product of the uniswap_pool *)
 }
 
-
+(* get the map that contains a specific users probabilities *)
 let get_probabilities (addr : string) (ms : market_storage) : bids = 
     match Map.find_opt addr ms.auction_bids with
     | None -> (failwith "error_PROBS_DOESNT_EXIST" : bids) 
     | Some p -> p
 
+(* check that a users probabilities bleongs to [0,1] *)
 let check_p (prob : (nat, nat) map) : unit = 
     let predicate = fun (i, j : nat * nat) -> assert (j >= 0n && j <= 100n)
     in Map.iter predicate prob
 
-(* this function is based on "Folded Operations over Maps" *)
+(* sum all of the values in a map *)
 let sum_prob (prob : (nat, nat) map) : nat = 
     let folded = fun (i, proba : nat * (nat * nat)) -> (i + proba.1)in 
     (Map.fold folded prob 0n)
 
+(* check that a users proba sum to one *)
 let check_prob_sum_to_one (addr : string) (ms : market_storage) : bool =
     let prob = get_probabilities addr ms in
     let sum_probs : nat = sum_prob prob in
     (sum_probs = 100n)  
 
+(* get the map that contains a specific users quantity * probability *)
 let get_Qps (addr : string) (ms : market_storage) : bids = 
     match Map.find_opt addr ms.auction_Qp with
     | None -> (failwith "error_QPS_DOESNT_EXIST" : bids) (* empty_qps_map *)
     | Some qp -> qp
 
+(* get a specific users bought in quantity *)
 let get_Q (addr : string) (ms : market_storage) : nat = 
     match Map.find_opt addr ms.auction_Q with
     | None -> (failwith "error_Q_DOESNT_EXIST" : nat)
     | Some q -> q
 
+(* returns a map that contains a specific users quantity * probability *)
 let calculate_Qp (addr : string) (ms : market_storage) : bids =
     let q : nat = get_Q addr ms in
     let prob = get_probabilities addr ms in
@@ -61,11 +63,12 @@ let calculate_Qp (addr : string) (ms : market_storage) : bids =
         (Bitwise.shift_left (proba * q) 48n) in
     (Map.map multiqp prob : bids)
 
+(* adds a specific users bought in quantity to the total quantity *)
 let update_q_total (addr : string) (ms : market_storage) : market_storage =
     let user_Q = get_Q addr ms in
     {ms with q_total = ms.q_total + user_Q}
 
-(* this function is based on "Map Operations over Maps" *)
+(* adds each users quantity * probability for each outcome to the market total *)
 let update_qps_total (addr : string) (ms : market_storage) : bids = 
     let qps_tot = ms.qps_total in
     let qps_user = get_Qps addr ms in
@@ -76,7 +79,7 @@ let update_qps_total (addr : string) (ms : market_storage) : bids =
         prev_qps_tot + qp_val in
     (Map.map new_qp_tot qps_user : bids)
 
-(* this function is based on "Map Operations over Maps" *)
+(* calculate the price of each outcome after the auction stage *)
 let calculate_clearing_price (ms : market_storage) : bids =
     let q_tot : nat = ms.q_total in
     let qps_tot : (nat, nat) map = ms.qps_total in
@@ -84,12 +87,15 @@ let calculate_clearing_price (ms : market_storage) : bids =
         (qp_val_tot / q_tot) in 
     (Map.map new_clear_price qps_tot : (nat, nat) map)
 
-(* CALCULATE USER ALLOCATION *)
+(* ALLOCATIONS after the auction stage *)
+
+(* get the map that contains a specific users allocation for each outcome *)
 let get_allocations (addr : string) (ms : market_storage) : bids =
     match Map.find_opt addr ms.market_allocations with
     | None -> empty_qps_map (* (failwith "error_USR_ALLOCATION_DOESNT_EXIST" : bids) *)
     | Some a -> a
 
+(* calculate the allocation for each outcome that a user ends up with *)
 let calculate_allocation (addr : string) (ms : market_storage) : (nat, nat) map =
     let qps_usr = get_Qps addr ms in
     let clr_prices : (nat, nat) map = ms.clearing_prices (* need to call calculate_clearing_price before this one*) in
@@ -100,6 +106,7 @@ let calculate_allocation (addr : string) (ms : market_storage) : (nat, nat) map 
         ((qp_val ) / spec_price) ) in
     (Map.map new_alloc qps_usr : bids)
 
+(* sum of allocation * clearing price for a user *)
 let sum_alloc_times_price (alloc_m : bids) (cpr_map : bids) : nat =
     let agg = fun (i, q_map : nat * (nat * nat)) ->
         let spec_price = match (Map.find_opt q_map.0 cpr_map) with
@@ -108,6 +115,7 @@ let sum_alloc_times_price (alloc_m : bids) (cpr_map : bids) : nat =
         i + (q_map.1 * spec_price) in
     (Map.fold agg alloc_m 0n)
 
+(* check that the sum of allocation * clearing price equals to the users bought in quantity *)
 let check_alloc_times_price (addr : string) (ms : market_storage) : bool =
     let alloc_usr = get_allocations addr ms in
     let clr_prices = ms.clearing_prices in
@@ -117,19 +125,24 @@ let check_alloc_times_price (addr : string) (ms : market_storage) : bool =
     abs (a_x_p - usr_Q) <= 1n
 
 (* UNISWAP *)
+
+(* takes two values and returns the smallest one *)
 let min (x : nat) (y : nat) = if x < y then x else y
 
+(* returns the smallest value from a map *)
 let get_min_val (m : (nat, nat) map) : nat =
     let folded = fun (i, j : nat * (nat * nat)) ->
         let mv = min i j.1 in
         (i * 0n) + mv in
     (Map.fold folded m (Bitwise.shift_left 10000000n 48n))
 
+(* for a specific user get the min value of quantity * probability and add it together with the other users min value *)
 let total_min_qps (addr : string) (ms : market_storage) : market_storage = 
     let usr_Qp = get_Qps addr ms in
     let usr_min_Qp = get_min_val usr_Qp in
     {ms with min_qps_total = ms.min_qps_total + usr_min_Qp}
 
+(* calculate the avilable quantity of each outcome that will be in the uniswap pool *)
 let calculate_uniswap_market (ms : market_storage) : bids =
     let min_Qp_tot = ms.min_qps_total in
     let clr_price = ms.clearing_prices in
@@ -137,10 +150,12 @@ let calculate_uniswap_market (ms : market_storage) : bids =
         (min_Qp_tot / price) in
     (Map.map uniswap_market clr_price)
 
+(* put the uniswap_pool in the market_storage *)
 let add_uniswap_mrk_to_storage (ms : market_storage) : market_storage =
     let uniswap_mrk = calculate_uniswap_market ms in
     {ms with uniswap_pool = uniswap_mrk}
 
+(* the product of each quantity from the the uniswap_pool *)
 let calculate_market_invariant (ms : market_storage) : nat =
     let uniswap_mrk = ms.uniswap_pool in
     let prod = fun (i, key_val : nat * (nat * nat)) ->
@@ -160,7 +175,29 @@ let swap_token (ms : market_storage) (token_sell : nat) (token_sell_val : nat) (
     let token_buy_new = (token_sell_pool * token_buy_pool) / token_sell_new in
     let new_pool = Map.update token_sell (Some token_sell_new) old_pool in
     let new_pool = Map.update token_buy (Some token_buy_new) new_pool in
-    {ms with uniswap_pool = new_pool} 
+    {ms with uniswap_pool = new_pool}
+
+let add_to_val_in_map (m : bids) (val_to_add : nat) : bids = 
+    let add = fun (i, j : nat * nat) ->
+        (j + val_to_add) in
+    (Map.map add m)
+
+let get_product_of_val_from_map (m : bids) : nat =
+    let prod = fun (i, key_val : nat * (nat * nat)) ->
+        i * key_val.1 in
+    (Map.fold prod m 1n)
+
+let swap_Ktokens (ms : market_storage) (token_sell_val : nat) (token_buy : nat) : market_storage =
+    let invariant = ms.market_invariant in
+    let old_pool : (nat, nat) map = ms.uniswap_pool in
+    let temp_pool : (nat, nat) map = Map.remove token_buy old_pool in
+    let temp_pool : (nat, nat) map = add_to_val_in_map temp_pool token_sell_val in
+    let temp_invariant = get_product_of_val_from_map temp_pool in
+    let new_buy_val = invariant / temp_invariant in
+    let new_pool = Map.update token_buy (Some new_buy_val) temp_pool in
+    {ms with uniswap_pool = new_pool}
+
+
 
 
 
@@ -268,6 +305,9 @@ let main (addr, ms : people * market_storage) : market_storage =
     (* Calculate the invariant *)
     let invariant = calculate_market_invariant n7_ms in
     let n7_ms = {n7_ms with market_invariant = invariant} in
+
+    (* Swap tokens *)
+    let n7_ms = swap_token n7_ms 1n 2n 2n in
     n7_ms
 
 (* let main (addr, ms : string * market_storage) : market_storage =
