@@ -104,7 +104,7 @@ let calculate_allocation (addr : string) (ms : market_storage) : (nat, nat) map 
         let spec_price = match (Map.find_opt i clr_prices) with
         | Some p -> p
         | None -> 0n in
-        ((qp_val ) / spec_price) ) in
+        ((qp_val ) / spec_price) ) in (* To use int-math just do: (Bitwise.shift_left (qp_val / spec_price) 48n) *)
     (Map.map new_alloc qps_usr : bids)
 
 (* sum of allocation * clearing price for a user *)
@@ -178,6 +178,13 @@ let swap_token (ms : market_storage) (token_sell : nat) (token_sell_val : nat) (
     let new_pool = Map.update token_buy (Some token_buy_new) new_pool in
     {ms with uniswap_pool = new_pool}
 
+let update_usr_alloc_after_swap (ms : market_storage) (addr : string) (token_sell : nat) (token_sell_new_val : nat) (token_buy : nat) (token_buy_new_val : nat) : bids =
+    let usr_alloc = get_allocations addr ms in
+    let usr_alloc = Map.update token_sell (Some token_sell_new_val) usr_alloc in
+    let usr_alloc = Map.update token_buy (Some token_buy_new_val) usr_alloc in
+    usr_alloc
+
+
 let add_to_val_in_map (m : bids) (val_to_add : nat) : bids = 
     let add = fun (i, j : nat * nat) ->
         (j + val_to_add) in
@@ -192,13 +199,18 @@ let swap_Ktokens (ms : market_storage) (token_sell_val : nat) (token_buy : nat) 
     let invariant = ms.market_invariant in
     let old_pool : (nat, nat) map = ms.uniswap_pool in
     let temp_pool : (nat, nat) map = Map.remove token_buy old_pool in
-    let temp_pool : (nat, nat) map = add_to_val_in_map temp_pool token_sell_val in
+    let temp_pool : (nat, nat) map = add_to_val_in_map temp_pool (Bitwise.shift_left token_sell_val 48n) in
     let temp_invariant = get_product_of_val_from_map temp_pool in
     let new_buy_val = invariant / temp_invariant in
     let new_pool = Map.update token_buy (Some new_buy_val) temp_pool in
     {ms with uniswap_pool = new_pool}
 
-
+let update_usr_alloc_after_swap (addr : string) (ms : market_storage) (token_sell_val : nat) (token_buy : nat) (token_buy_new_val : nat) : bids =
+    let old_usr_alloc = get_allocations addr ms in
+    let temp_usr_alloc = Map.remove token_buy old_usr_alloc in
+    let temp_usr_alloc = add_to_val_in_map temp_usr_alloc (Bitwise.shift_left token_sell_val 48n) in
+    let new_usr_alloc = Map.update token_buy (Some token_buy_new_val) temp_usr_alloc in
+    new_usr_alloc
 
 
 
@@ -307,9 +319,12 @@ let main (addr, ms : people * market_storage) : market_storage =
     let invariant = calculate_market_invariant n7_ms in
     let n7_ms = {n7_ms with market_invariant = invariant} in
 
-    (* Swap tokens *)
+    (* Swap tokens 
     let n7_ms = swap_token n7_ms 1n 2n 2n in
-    (* n7_ms *)
+    *)
+
+    (* Swap K tokens *)
+    let n7_ms = swap_Ktokens n7_ms 2n 2n in
 
     (* get new invariant *)
     let invariant = calculate_market_invariant n7_ms in
