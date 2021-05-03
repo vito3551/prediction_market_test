@@ -50,7 +50,7 @@ let get_Qps (addr : string) (ms : market_storage) : bids =
     | None -> (failwith "error_QPS_DOESNT_EXIST" : bids) (* empty_qps_map *)
     | Some qp -> qp
 
-(* get a specific user's purchased in quantity *)
+(* get a specific user's purchased quantity *)
 let get_Q (addr : string) (ms : market_storage) : nat = 
     match Map.find_opt addr ms.auction_Q with
     | None -> (failwith "error_Q_DOESNT_EXIST" : nat)
@@ -104,7 +104,7 @@ let calculate_allocation (addr : string) (ms : market_storage) : (nat, nat) map 
         let spec_price = match (Map.find_opt i clr_prices) with
         | Some p -> p
         | None -> 0n in
-        ((qp_val ) / spec_price) ) in (* To use int-math just do: (Bitwise.shift_left (qp_val / spec_price) 48n) *)
+        ((Bitwise.shift_left qp_val 48n) / spec_price) ) in (* To use int-math just do: ((Bitwise.shift_left qp_val 48n) / spec_price) *) (* Without int-math do: ((qp_val ) / spec_price) *)
     (Map.map new_alloc qps_usr : bids)
 
 (* sum of allocation * clearing price for a user *)
@@ -122,7 +122,7 @@ let check_alloc_times_price (addr : string) (ms : market_storage) : bool =
     let clr_prices = ms.clearing_prices in
     let usr_Q = get_Q addr ms in
     let alloc_x_price = sum_alloc_times_price alloc_usr clr_prices in
-    let a_x_p = (Bitwise.shift_right alloc_x_price 48n) / 100n in
+    let a_x_p = (Bitwise.shift_right alloc_x_price 96n) / 100n in (* (Bitwise.shift_right alloc_x_price 48n) *)
     abs (a_x_p - usr_Q) <= 1n
 
 (* UNISWAP *)
@@ -205,7 +205,7 @@ let swap_Ktokens (ms : market_storage) (token_sell_val : nat) (token_buy : nat) 
     let new_pool = Map.update token_buy (Some new_buy_val) temp_pool in
     {ms with uniswap_pool = new_pool}
 
-let update_usr_alloc_after_swap (addr : string) (ms : market_storage) (token_sell_val : nat) (token_buy : nat) (token_buy_new_val : nat) : bids =
+let update_usr_alloc_after_Kswap (addr : string) (ms : market_storage) (token_sell_val : nat) (token_buy : nat) (token_buy_new_val : nat) : bids =
     let old_usr_alloc = get_allocations addr ms in
     let temp_usr_alloc = Map.remove token_buy old_usr_alloc in
     let temp_usr_alloc = add_to_val_in_map temp_usr_alloc (Bitwise.shift_left token_sell_val 48n) in
@@ -254,7 +254,7 @@ let main (addr, ms : people * market_storage) : market_storage =
     if sum_prob_usr0 <> 100n then
         (failwith "error_PROBS_DOESNT_SUMto100" : market_storage)
     else
-    (* Calculate Qp for usr0 and ad it to the market storage*) 
+    (* Calculate Qp for usr0 and add it to the market storage*) 
     let usr0_qp : (nat, nat) map = calculate_Qp addr.0 new_ms in 
     let a0_Qp : (string, bids) map = Map.update (addr.0 : string) (Some usr0_qp) new_ms.auction_Qp in
     let n_ms = {new_ms with auction_Qp = a0_Qp} in
