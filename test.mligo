@@ -1,5 +1,6 @@
 type bids = (nat, nat) map
 type auction_map = (string, bids) map
+let fee : nat = 1n
  
 
 let empty_qps_map : (nat, nat) map = Map.empty
@@ -130,8 +131,8 @@ let check_alloc_times_price (addr : string) (ms : market_storage) : bool =
 (* takes two values and returns the smallest one *)
 let min (x : nat) (y : nat) = if x < y then x else y
 
-(* returns the smallest value from a map *)
-let get_min_val (m : (nat, nat) map) : nat =
+(* returns the smallest value from a map *) 
+let get_min_val (m : (nat, nat) map) : nat = 
     let folded = fun (i, j : nat * (nat * nat)) ->
         let mv = min i j.1 in
         (i * 0n) + mv in
@@ -163,6 +164,7 @@ let calculate_market_invariant (ms : market_storage) : nat =
         (i * key_val.1) in
     (Map.fold prod uniswap_mrk 1n)
 
+(* swap a choosen nr of of one outocome token for some nr of another outcome token*)
 let swap_token (ms : market_storage) (token_sell : nat) (token_sell_val : nat) (token_buy : nat) : market_storage = 
     (* let invariant = ms.market_invariant in *)
     let old_pool = ms.uniswap_pool in
@@ -184,33 +186,53 @@ let update_usr_alloc_after_swap (ms : market_storage) (addr : string) (token_sel
     let usr_alloc = Map.update token_buy (Some token_buy_new_val) usr_alloc in
     usr_alloc
 
-
+(* add a choosen value to all of the values inside a map *)
 let add_to_val_in_map (m : bids) (val_to_add : nat) : bids = 
     let add = fun (i, j : nat * nat) ->
         (j + val_to_add) in
     (Map.map add m)
+
+(* subtract a choosen value from all of the values in map *)
+let sub_from_val_in_map (m : bids) (val_to_sub : nat) : bids =
+    let sub = fun (i, j : nat * nat) ->
+        abs (j - val_to_sub) in
+    (Map.map sub m)
 
 let get_product_of_val_from_map (m : bids) : nat =
     let prod = fun (i, key_val : nat * (nat * nat)) ->
         i * key_val.1 in
     (Map.fold prod m 1n)
 
-let swap_Ktokens (ms : market_storage) (token_sell_val : nat) (token_buy : nat) : market_storage =
+let get_val_from_map (m : bids) (key : nat) : nat =
+    match Map.find_opt key m with
+    | None -> (failwith "error_key_DOESNT_EXIST" : nat)
+    | Some v -> v
+
+let update_usr_alloc_after_Kswap (addr : string) (ms : market_storage) (token_sell_val : nat) (token_buy : nat) (bought_val : nat) : market_storage =
+    let old_usr_alloc = get_allocations addr ms in
+    let old_usr_val = get_val_from_map old_usr_alloc token_buy in
+    let temp_usr_alloc = Map.remove token_buy old_usr_alloc in
+    let temp_usr_alloc = sub_from_val_in_map temp_usr_alloc (Bitwise.shift_left token_sell_val 48n) in
+    let new_usr_alloc = Map.update token_buy (Some (bought_val + old_usr_val)) temp_usr_alloc in
+    let new_alloc = Map.update addr (Some new_usr_alloc) ms.market_allocations in
+    {ms with market_allocations = new_alloc}
+
+let swap_Ktokens (addr : string) (ms : market_storage) (token_sell_val : nat) (token_buy : nat) : market_storage =
     let invariant = ms.market_invariant in
     let old_pool : (nat, nat) map = ms.uniswap_pool in
+    let old_val = get_val_from_map old_pool token_buy in 
     let temp_pool : (nat, nat) map = Map.remove token_buy old_pool in
     let temp_pool : (nat, nat) map = add_to_val_in_map temp_pool (Bitwise.shift_left token_sell_val 48n) in
     let temp_invariant = get_product_of_val_from_map temp_pool in
     let new_buy_val = invariant / temp_invariant in
+    let usr_bought : nat = abs (old_val - new_buy_val) in
+    //let ms = update_usr_alloc_after_Kswap addr ms token_sell_val token_buy usr_bought in 
     let new_pool = Map.update token_buy (Some new_buy_val) temp_pool in
     {ms with uniswap_pool = new_pool}
 
-let update_usr_alloc_after_Kswap (addr : string) (ms : market_storage) (token_sell_val : nat) (token_buy : nat) (token_buy_new_val : nat) : bids =
-    let old_usr_alloc = get_allocations addr ms in
-    let temp_usr_alloc = Map.remove token_buy old_usr_alloc in
-    let temp_usr_alloc = add_to_val_in_map temp_usr_alloc (Bitwise.shift_left token_sell_val 48n) in
-    let new_usr_alloc = Map.update token_buy (Some token_buy_new_val) temp_usr_alloc in
-    new_usr_alloc
+
+
+
 
 
 
@@ -323,8 +345,8 @@ let main (addr, ms : people * market_storage) : market_storage =
     let n7_ms = swap_token n7_ms 1n 2n 2n in
     *)
 
-    (* Swap K tokens *)
-    let n7_ms = swap_Ktokens n7_ms 2n 2n in
+    (* Swap K tokens *) // for usr0 sell 2 of o1 and o2 and buy 03
+    let n7_ms = swap_Ktokens addr.0 n7_ms 2n 2n in
 
     (* get new invariant *)
     let invariant = calculate_market_invariant n7_ms in
