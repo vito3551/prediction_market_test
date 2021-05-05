@@ -149,8 +149,11 @@ let calculate_uniswap_market (ms : market_storage) : bids =
     let min_Qp_tot = ms.min_qps_total in
     let clr_price = ms.clearing_prices in
     let uniswap_market = fun (i, price : nat * nat) ->
-        (Bitwise.shift_left (min_Qp_tot / price) 48n) in
+        ((Bitwise.shift_left min_Qp_tot 48n) / price) in //(Bitwise.shift_left (min_Qp_tot / price) 48n)
     (Map.map uniswap_market clr_price)
+
+(* update usr allocation after contributing to the swap-pool *)
+//let subtract_contribution (addr : string) (ms : market_storage) : 
 
 (* put the uniswap_pool in the market_storage *)
 let add_uniswap_mrk_to_storage (ms : market_storage) : market_storage =
@@ -340,7 +343,7 @@ let main (addr, ms : people * market_storage) : market_storage =
     (* Calculate the invariant *)
     let invariant = calculate_market_invariant n7_ms in
     let n7_ms = {n7_ms with market_invariant = invariant} in
-
+    
     (* Swap tokens 
     let n7_ms = swap_token n7_ms 1n 2n 2n in
     *)
@@ -351,7 +354,7 @@ let main (addr, ms : people * market_storage) : market_storage =
     (* get new invariant *)
     let invariant = calculate_market_invariant n7_ms in
     let n7_ms = {n7_ms with market_invariant = invariant} in
-    n7_ms
+    n7_ms 
 
 (* let main (addr, ms : string * market_storage) : market_storage =
     let new_ms = update_q_total addr ms in
