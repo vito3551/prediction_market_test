@@ -19,6 +19,7 @@ type market_storage = {
     auction_Q : (string, nat) map; (* map that contains each users bought in quantity *)
     auction_Qp : (string, bids) map; (* map that contains each users quantity * probability *)
     market_allocations : (string, bids) map; (* each users allocation after the auction stage *)
+    contribution_variables : (string, nat) map; (* map that contains each users min value of (quantity * probabilities) *) 
     uniswap_pool : bids; (* available quantity of each outcome *)
     market_invariant : nat; (* the product of the uniswap_pool *)
 }
@@ -152,6 +153,16 @@ let calculate_uniswap_market (ms : market_storage) : bids =
         ((Bitwise.shift_left min_Qp_tot 48n) / price) in //(Bitwise.shift_left (min_Qp_tot / price) 48n)
     (Map.map uniswap_market clr_price)
 
+(* calculate the contribution factor to the swap-pool from a user *) 
+let calculate_usr_contribution_variable (addr : string) (ms : market_storage) : (string, nat) map =
+    let usr_Qp = get_Qps addr ms in
+    let usr_min_Qp = get_min_val usr_Qp in
+    let contrib_map = ms.contribution_variables in
+    let contrib_map = Map.update addr (Some usr_min_Qp) contrib_map in
+    contrib_map
+    
+(* Calculate the exact contribution to the pool for a user *)
+
 (* update usr allocation after contributing to the swap-pool *)
 //let subtract_contribution (addr : string) (ms : market_storage) : 
 
@@ -263,6 +274,7 @@ let my_ms : market_storage = {
     auction_Q = Map.literal [(users.0, 100n); (users.1, 200n); (users.2, 250n)];  (* empty_Q_map *) 
     auction_Qp = empty_auction_map;
     market_allocations = empty_auction_map;
+    contribution_variables = empty_Q_map;
     uniswap_pool = empty_qps_map; 
     market_invariant = 0n;
 }
@@ -316,6 +328,14 @@ let main (addr, ms : people * market_storage) : market_storage =
     (* Calculate clearing price *)
     let cp = calculate_clearing_price n4_ms in
     let n5_ms = {n4_ms with clearing_prices = cp} in
+
+    (* Calculate contribution variable for usr 0 and put it in the storage *)
+    let usr0_contrib_var = calculate_usr_contribution_variable addr.0 n5_ms in
+    let n5_ms = {n5_ms with contribution_variables = usr0_contrib_var} in
+
+    (* Calculate contribution variable for usr 1 and put it in the storage *)
+    let usr1_contrib_var = calculate_usr_contribution_variable addr.1 n5_ms in
+    let n5_ms = {n5_ms with contribution_variables = usr1_contrib_var} in
 
     (* Calculate allocation for user 0 *)
     let u0_alloc = calculate_allocation addr.0 n5_ms in
