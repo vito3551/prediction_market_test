@@ -19,7 +19,8 @@ type market_storage = {
     auction_Q : (string, nat) map; (* map that contains each users bought in quantity *)
     auction_Qp : (string, bids) map; (* map that contains each users quantity * probability *)
     market_allocations : (string, bids) map; (* each users allocation after the auction stage *)
-    contribution_variables : (string, nat) map; (* map that contains each users min value of (quantity * probabilities) *) 
+    contribution_variables : (string, nat) map; (* map that contains each users min value of (quantity * probabilities) *)
+    contribution_to_pool : (string, bids) map; (* map that contains each users contribution to the pool *) 
     uniswap_pool : bids; (* available quantity of each outcome *)
     market_invariant : nat; (* the product of the uniswap_pool *)
 }
@@ -161,7 +162,17 @@ let calculate_usr_contribution_variable (addr : string) (ms : market_storage) : 
     let contrib_map = Map.update addr (Some usr_min_Qp) contrib_map in
     contrib_map
     
-(* Calculate the exact contribution to the pool for a user *)
+(* Calculate the contribution of each outcome to the pool from a user *)
+let calculate_usr_pool_contribution (addr : string) (ms : market_storage) : bids =
+    let contribution_variables_map = ms.contribution_variables in
+    let usr_contribution_variable = match Map.find_opt addr contribution_variables_map with 
+        | None -> (failwith "error_USR_CONTRIB_VAL_DOESNT_EXIST" : nat)
+        | Some v -> v in
+    let clearing_prices = ms.clearing_prices in
+    let usr_contribution : (nat * nat) -> nat = fun (i, price : nat * nat) ->
+        ((Bitwise.shift_left usr_contribution_variable 48n) / price) in
+    (Map.map usr_contribution clearing_prices)
+
 
 (* update usr allocation after contributing to the swap-pool *)
 //let subtract_contribution (addr : string) (ms : market_storage) : 
@@ -275,6 +286,7 @@ let my_ms : market_storage = {
     auction_Qp = empty_auction_map;
     market_allocations = empty_auction_map;
     contribution_variables = empty_Q_map;
+    contribution_to_pool = empty_auction_map;
     uniswap_pool = empty_qps_map; 
     market_invariant = 0n;
 }
@@ -332,10 +344,18 @@ let main (addr, ms : people * market_storage) : market_storage =
     (* Calculate contribution variable for usr 0 and put it in the storage *)
     let usr0_contrib_var = calculate_usr_contribution_variable addr.0 n5_ms in
     let n5_ms = {n5_ms with contribution_variables = usr0_contrib_var} in
+    (* Calculate the contribution of each outcome to the pool for usr 0 *)
+    let u0_contribution = calculate_usr_pool_contribution addr.0 n5_ms in
+    let c0 = Map.update addr.0 (Some u0_contribution) n5_ms.contribution_to_pool in
+    let n5_ms = {n5_ms with contribution_to_pool = c0} in
 
     (* Calculate contribution variable for usr 1 and put it in the storage *)
     let usr1_contrib_var = calculate_usr_contribution_variable addr.1 n5_ms in
     let n5_ms = {n5_ms with contribution_variables = usr1_contrib_var} in
+    (* Calculate the contribution of each outcome to the pool for usr 1 *)
+    let u1_contribution = calculate_usr_pool_contribution addr.1 n5_ms in
+    let c1 = Map.update addr.1 (Some u1_contribution) n5_ms.contribution_to_pool in
+    let n5_ms = {n5_ms with contribution_to_pool = c1} in
 
     (* Calculate allocation for user 0 *)
     let u0_alloc = calculate_allocation addr.0 n5_ms in
@@ -369,11 +389,11 @@ let main (addr, ms : people * market_storage) : market_storage =
     *)
 
     (* Swap K tokens *) // for usr0 sell 2 of o1 and o2 and buy 03
-    let n7_ms = swap_Ktokens addr.0 n7_ms 2n 2n in
+    //let n7_ms = swap_Ktokens addr.0 n7_ms 2n 2n in
 
     (* get new invariant *)
-    let invariant = calculate_market_invariant n7_ms in
-    let n7_ms = {n7_ms with market_invariant = invariant} in
+    //let invariant = calculate_market_invariant n7_ms in
+    //let n7_ms = {n7_ms with market_invariant = invariant} in
     n7_ms 
 
 (* let main (addr, ms : string * market_storage) : market_storage =
