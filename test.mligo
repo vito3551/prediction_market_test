@@ -25,6 +25,22 @@ type market_storage = {
     market_invariant : nat; (* the product of the uniswap_pool *)
 }
 
+(* AUCTION STAGE *)
+(* When a new user enters the auction his/hers purchased quantity and choosen probabilites
+ will be stored in the market storage. Then this script will calculate (quantity times probabilities)
+ as well as the min value of (quantity times probabilities). The min value will be stored in a map and
+ it will also be added to the total of each users min value.  
+ 
+ After the auction satge, the total of all users (quantity times probabilities) as well as the 
+ total quantity purchased  by all users will be used to calculate the clearing prices.
+ Once we have the clearing prices we can can calculate each users allocation in the market.  
+ The sum of each users min value of (quantity times probabilities) will then be used to calculate
+ the swap-pool and each users min value of (quantity times probabilities) will be used to calculate
+ his/hers contributipon to the pool 
+ 
+ Since we can't use floats due to decimal points error we will instead left shift by 48 bits
+ whenever we need good decimal point precission. *)
+
 (* get the map that contains a specific user's probabilities *)
 let get_probabilities (addr : string) (ms : market_storage) : bids = 
     match Map.find_opt addr ms.auction_bids with
@@ -154,7 +170,7 @@ let calculate_uniswap_market (ms : market_storage) : bids =
         ((Bitwise.shift_left min_Qp_tot 48n) / price) in //(Bitwise.shift_left (min_Qp_tot / price) 48n)
     (Map.map uniswap_market clr_price)
 
-(* calculate the contribution factor to the swap-pool from a user *) 
+(* calculate the contribution factor to the swap-pool for a user *) 
 let calculate_usr_contribution_variable (addr : string) (ms : market_storage) : (string, nat) map =
     let usr_Qp = get_Qps addr ms in
     let usr_min_Qp = get_min_val usr_Qp in
@@ -389,11 +405,11 @@ let main (addr, ms : people * market_storage) : market_storage =
     *)
 
     (* Swap K tokens *) // for usr0 sell 2 of o1 and o2 and buy 03
-    //let n7_ms = swap_Ktokens addr.0 n7_ms 2n 2n in
+    let n7_ms = swap_Ktokens addr.0 n7_ms 2n 2n in
 
     (* get new invariant *)
-    //let invariant = calculate_market_invariant n7_ms in
-    //let n7_ms = {n7_ms with market_invariant = invariant} in
+    let invariant = calculate_market_invariant n7_ms in
+    let n7_ms = {n7_ms with market_invariant = invariant} in
     n7_ms 
 
 (* let main (addr, ms : string * market_storage) : market_storage =
