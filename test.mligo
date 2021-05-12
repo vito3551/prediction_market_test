@@ -25,6 +25,8 @@ type market_storage = {
     market_invariant : nat; (* the product of the uniswap_pool *)
 }
 
+type return = (operation list) * market_storage
+
 (* AUCTION STAGE *)
 (* When a new user enters the auction his/hers purchased quantity and choosen probabilites
  will be stored in the market storage. Then this script will calculate (quantity times probabilities)
@@ -239,6 +241,7 @@ let sub_from_val_in_map (m : bids) (val_to_sub : nat) : bids =
         abs (j - val_to_sub) in
     (Map.map sub m)
 
+(* the product of all values in a map *)
 let get_product_of_val_from_map (m : bids) : nat =
     let prod = fun (i, key_val : nat * (nat * nat)) ->
         i * key_val.1 in
@@ -307,7 +310,7 @@ let my_ms : market_storage = {
     market_invariant = 0n;
 }
 
-let main (addr, ms : people * market_storage) : market_storage =
+let main (addr, ms : people * market_storage) : return =
     (* user 0 *)
     (* Add usr0 Q-val to Q-tot in the market_storage*)
     let new_ms = update_q_total addr.0 ms in
@@ -317,7 +320,7 @@ let main (addr, ms : people * market_storage) : market_storage =
     | Some p -> p in
     let sum_prob_usr0 = sum_prob prob_usr0 in
     if sum_prob_usr0 <> 100n then
-        (failwith "error_PROBS_DOESNT_SUMto100" : market_storage)
+        (failwith "error_PROBS_DOESNT_SUMto100" : return)
     else
     (* Calculate Qp for usr0 and add it to the market storage*) 
     let usr0_qp : (nat, nat) map = calculate_Qp addr.0 new_ms in 
@@ -338,7 +341,7 @@ let main (addr, ms : people * market_storage) : market_storage =
     | Some p -> p in
     let sum_prob_usr1 = sum_prob prob_usr1 in
     if sum_prob_usr1 <> 100n then
-        (failwith "error_PROBS_DOESNT_SUMto100" : market_storage)
+        (failwith "error_PROBS_DOESNT_SUMto100" : return)
     else 
     (* Calculate Qp for usr1 and ad it to the market storage*) 
     let usr1_qp : bids = calculate_Qp addr.1 n2_ms in
@@ -380,7 +383,7 @@ let main (addr, ms : people * market_storage) : market_storage =
     (* CHECK that ALLOC TIMES PRICE for usr0 is equal to Q*)
     let usr0_a_times_p = check_alloc_times_price addr.0 n6_ms in
     if usr0_a_times_p <> true  then
-        (failwith "error_ALLOC_TIMES_PRICE_ISNT_Q" : market_storage)
+        (failwith "error_ALLOC_TIMES_PRICE_ISNT_Q" : return)
     else
     (* Calculate allocation for user 1 *)
     let u1_alloc = calculate_allocation addr.1 n6_ms in
@@ -389,7 +392,7 @@ let main (addr, ms : people * market_storage) : market_storage =
     (* CHECK that ALLOC TIMES PRICE for usr1 is equal to Q*)
     let usr1_a_times_p = check_alloc_times_price addr.1 n7_ms in
     if usr1_a_times_p <> true then
-        (failwith "error_ALLOC_TIMES_PRICE_ISNT_Q" : market_storage)
+        (failwith "error_ALLOC_TIMES_PRICE_ISNT_Q" : return)
     else
     (* n7_ms *)
 
@@ -410,7 +413,8 @@ let main (addr, ms : people * market_storage) : market_storage =
     (* get new invariant *)
     let invariant = calculate_market_invariant n7_ms in
     let n7_ms = {n7_ms with market_invariant = invariant} in
-    n7_ms 
+    //n7_ms
+    (([] : operation list), n7_ms)
 
 (* let main (addr, ms : string * market_storage) : market_storage =
     let new_ms = update_q_total addr ms in
