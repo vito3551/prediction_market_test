@@ -63,6 +63,11 @@ let get_auction_data (market : market) : auction =
     | Auction a -> a
     | Trading _ -> (failwith "error_AUCTION_CLOSED" : auction)
 
+let get_active_market_data (market : market) : active_market =
+    match market.state with 
+    | Auction _ -> (failwith "error_AUCTION_is_OPEN" : active_market)
+    | Trading t -> t
+
 (* returns a map that contains a specific user's quantity * probability *)
 let calculate_Qp (usr_Q, usr_probs : nat * bid_map) : bid_map =
     let multiqp : (nat * nat) -> nat = fun (_, proba : nat * nat) -> 
@@ -102,6 +107,7 @@ let new_bet ( bet_id, bet, market_storage : bet_id * bet * market_storage ) : re
     if Big_map.mem bet_id market_storage.bets then
         (failwith "error_USER_HAS_ALREADY_MADE_BET" : return)
     else 
+    // add a users quantity to the total quantity
     let new_quantity = auction.q_total + bet.quantity in
     // calculate quantity times probability for a user
     let usr_qp = calculate_Qp (bet.quantity, bet.probabilities) in
@@ -109,8 +115,9 @@ let new_bet ( bet_id, bet, market_storage : bet_id * bet * market_storage ) : re
     let new_qp_total = calculate_Qp_total (usr_qp, auction.qps_total) in
     // get the minimum value of a users (quantity times probability)
     let usr_min_qp_val = get_min_val usr_qp in
+    // add a users min_qp_val to the market total
     let new_min_qps_total = auction.min_qps_total + usr_min_qp_val in
-    // update auction running totals with bet
+    // update auction totals 
     let auction = { auction with 
         q_total = new_quantity;
         qps_total = new_qp_total;
@@ -138,16 +145,21 @@ let end_auction (market_id, market_storage : nat * market_storage) : return =
     let auction = get_auction_data market_record in
     // calculate clearing prices
     let clearing_prices = calculate_clearing_price (auction.q_total, auction.qps_total : nat * bid_map) in
+    // get active_market_record_data
+    let active_market = get_active_market_data market_record in
+    // add clearing prices to the active_market_data
+    let active_market = {active_market with clearing_prices = clearing_prices} in
+    // add new active_market_record to market_record
+    let market_record = {market_record with state = Trading(active_market)} in
+    // add new market_record to market_map
+    let market_map = Big_map.update market_id (Some market_record) market_storage.markets in
+    // update market_storage
+    let market_stoarge = {market_storage with markets = market_map} in
+
 
     (([] : operation list), market_storage)
     
 
-
-(* get the map that contains a specific user's probabilities 
-let get_probabilities (addr : address) (ms : market_storage) : bid_map = 
-    match Map.find_opt addr ms.auction_bids with
-    | None -> (failwith "error_PROBS_DOESNT_EXIST" : bid_map) 
-    | Some p -> p *)
 
 (* check that a user's probabilities belongs to [0,1] *)
 let check_p (prob : (nat, nat) map) : unit = 
